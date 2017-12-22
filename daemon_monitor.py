@@ -109,23 +109,31 @@ if __name__ == '__main__':
     )
     cmd_parser.add_argument(
         '--attempts-qty', nargs='?', type=int, choices=range(1,6), default=3,
-        help='Number of attempts/checks before the fail decision (default: %(default)s)',
+        help='Number of attempts/checks before the fail decision (default: %(default)s).',
     )
     cmd_parser.add_argument(
         '--attempts-timeout', nargs='?', type=int, default=30,
-        help='Delay in seconds before the next attempt (default: %(default)s)',
+        help='Delay in seconds before the next attempt (default: %(default)s).',
     )
     cmd_parser.add_argument(
         '-c', '--container', action='append',
-        help='Container name to monitor and start. May be specified multiple times',
+        help='Container name to monitor and start. May be specified multiple times.',
+        default=[],
+    )
+    cmd_parser.add_argument(
+        '-cfn', '--container-filter-name', action='append',
+        help='''
+        Same as --container but allows specifying the just chunk of the container name.
+        Useful to match multiple containers with similar name.
+        May be specified multiple times.
+        ''',
         default=[],
     )
     cmd_options = vars(cmd_parser.parse_args())
     attempts_qty = cmd_options.get('attempts_qty')
     attempts_tm_sec = cmd_options.get('attempts_timeout')
     docker_container_check_list = cmd_options.get('container')
-    #
-    LOG.info('Monitored containers: %s', docker_container_check_list)
+    docker_container_filter_name_check_list = cmd_options.get('container_filter_name')
 
 
     ## Connect to Docker service
@@ -160,14 +168,29 @@ if __name__ == '__main__':
     docker_container_start_list = {}
     # Get containers objects
     for i in docker_container_check_list:
-        container = None
         try:
             container = docker_client.containers.get(i)
+            docker_container_start_list[container.name] = container
         except docker.errors.NotFound:
             LOG.warn('Docker container is not found, name: %s => skip', i)
-        docker_container_start_list[i] = container
+        except docker.errors.APIError as e:
+            LOG.error("Can't get Docker container, name: %s, error: %s", i, e)
+            LOG.debug('Exception', exc_info=1)
+    # Get containers objects by filter-name
+    for i in docker_container_filter_name_check_list:
+        try:
+            containers = docker_client.containers.list(all=True, filters={'name':i})
+            if len(containers) == 0:
+                LOG.warn('Docker containers are not found, filter-name: %s => skip', i)
+            for v in containers:
+                docker_container_start_list[v.name] = v
+        except docker.errors.APIError as e:
+            LOG.error("Can't get Docker containers list, filter-name: %s, error: %s", i, e)
+            LOG.debug('Exception', exc_info=1)
     # Clean-up the list
     docker_container_start_list = dict_remove_none(docker_container_start_list)
+    #
+    LOG.info('Monitored containers: %s', list(docker_container_start_list.keys()))
     # Ignore running or starting containers
     for i in range(0, attempts_qty if len(docker_container_start_list)>0 else 0):
         # Check status
