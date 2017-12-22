@@ -48,3 +48,10 @@ Add new line like:
 ```
 */30 * * * * /root/bin/docker-watchdog/daemon_monitor.py > /dev/null 2>&1
 ```
+
+
+Logging
+=======
+
+Logs are sent to the `syslog` `daemon` facility using `UDP` connection.
+Please ensure the `syslog` service is listening the `UDP` `514` port on the `localhost`.
