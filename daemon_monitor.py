@@ -144,20 +144,27 @@ if __name__ == '__main__':
 
     ## Restart Docker service if it fails to start all containers on system boot
     # May happens on 17.11.0
-    docker_container_qty = None
-    docker_container_running_qty = None
+    # In this case the Client.info() and Containers.list() returns different qty of running containers
+    docker_container_start_failure = None
     for i in range(0, attempts_qty):
         docker_info = docker_client.info()
         docker_container_qty = docker_info.get('Containers')
         docker_container_running_qty = docker_info.get('ContainersRunning')
-        LOG.info('Containers info, qty: %d, running: %d', docker_container_qty, docker_container_running_qty)
-        if docker_container_qty == 0 or (docker_container_qty > 0 and docker_container_running_qty > 0):
+        docker_container_exited_qty = len(docker_client.containers.list(all=True, filters={'status':'exited'}))
+        LOG.info('Containers info, qty: %d, running: %d, exited: %d',
+            docker_container_qty, docker_container_running_qty, docker_container_exited_qty
+        )
+        if docker_container_qty == 0 or (docker_container_qty > 0 and (
+                docker_container_running_qty == (docker_container_qty - docker_container_exited_qty)
+        )):
+            docker_container_start_failure = False
             break
-        LOG.warn('Docker has zero qty of running containers')
+        LOG.warn('Docker has wrong qty of running containers')
+        docker_container_start_failure = True
         if i+1 < attempts_qty:
             LOG.info('Wait for %d sec', attempts_tm_sec)
             time.sleep(attempts_tm_sec)
-    if docker_container_qty > 0 and docker_container_running_qty == 0:
+    if docker_container_start_failure:
         LOG.error('Docker failed to start containers')
         restart_docker()
         docker_client = connect_docker_service(attempts_qty, attempts_tm_sec)
